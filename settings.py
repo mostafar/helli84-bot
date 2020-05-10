@@ -1,8 +1,11 @@
 import pytz
 
-API_TOKEN = ''
 CHAT_IDS_WHITELIST = [
     -467632056,
 ]
 MESSAGE_LIMIT_COUNT = 5
 TIMEZONE = pytz.timezone("Asia/Tehran")
+DATA_FILE_PATH = './bot.db'
+
+with open('api.token') as token_file:
+    API_TOKEN = token_file.read().strip()

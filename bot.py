@@ -8,6 +8,8 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from collections import defaultdict
+from data import get_message_dates
+from data import set_message_dates
 
 START_MESSAGE = '''
 Hi! I'm a bot here.
@@ -16,23 +18,18 @@ OVER_LIMIT_REPLY_TEMPLATE = '''
 This is your {message_count}th message today. Please respect the group's rules by not sending any more messages until tomorrow ({time_until_ban_lift} from now).
 '''
 
-bot = telebot.TeleBot(settings.API_TOKEN)
-server_start_time = datetime.now()
-user_messages = defaultdict(lambda: [])
+bot = telebot.TeleBot(settings.API_TOKEN, num_threads=1)
+server_start_time = datetime.now().timestamp()
 
 
-def clean_up_messages(user_id):
+def clean_up_message_dates(user_id):
     now = datetime.now(settings.TIMEZONE)
+    beginning_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
-    user_messages[user_id] = [
-        message_date for message_date in user_messages[user_id]
-        if message_date.date() == now.date()
+    return [
+        message_date for message_date in get_message_dates(user_id) 
+        if message_date > beginning_of_today
     ]
-
-
-@bot.message_handler(commands=['help', 'start'])
-def send_welcome(message):
-    bot.reply_to(message, START_MESSAGE)
 
 
 def log(log_dict):
@@ -52,11 +49,11 @@ def time_until_tomorrow_string():
 
 
 def is_sent_after_server_start(message):
-    return datetime.fromtimestamp(message.date) >= server_start_time
+    return message.date >= server_start_time
 
 
 @bot.message_handler(func=lambda message: True)
-def echo_message(message):
+def process_message(message):
     if message.chat.id not in settings.CHAT_IDS_WHITELIST:
         log({
             'event': 'Unauthorized chat id, ignored.', 
@@ -65,38 +62,50 @@ def echo_message(message):
         })
         return
 
-    if not is_sent_after_server_start(message):
-        log({'event': 'Old message, ignored.', 'timestamp': message.date})
-        return
-
-    user_id = message.from_user.id
-    message_date = settings.TIMEZONE.localize(datetime.fromtimestamp(message.date))
-
     log({
         'event': 'Processing the message ...',
-        'message_date': str(message_date),
+        'message_date': str(settings.TIMEZONE.localize(datetime.fromtimestamp(message.date))),
         'user_id': message.from_user.id,
         'username': message.from_user.username,
         'chat_id': message.chat.id,
         'chat_title': message.chat.title,
     })
+   
+    try:
+        message_dates = clean_up_message_dates(message.from_user.id)
+    except KeyError as e:
+        log({
+            'event': 'More than one record found in the storage',
+            'user_id': message.from_user.id,
+            'error': str(e),
+        })
+        return
+
+    message_dates.append(message.date)
+    message_count = len(message_dates)
+    set_message_dates(message.from_user.id, message_dates)
     
-    clean_up_messages(user_id)
-    user_messages[user_id].append(message_date)
-    
-    if len(user_messages[user_id]) == (settings.MESSAGE_LIMIT_COUNT + 1) or \
-        len(user_messages[user_id]) == (settings.MESSAGE_LIMIT_COUNT * 2):
+    if not is_sent_after_server_start(message):
+        log({'event': 'Old message, not going to reply.', 'timestamp': message.date})
+        return
+
+    if message_count == (settings.MESSAGE_LIMIT_COUNT + 1) or \
+        message_count == (settings.MESSAGE_LIMIT_COUNT * 2):
         log({
             'event': 'Too many messages reply sent.', 
             'user_id': message.from_user.id, 
             'username': message.from_user.username,
-            'message_count': len(user_messages[user_id]),
+            'message_count': message_count,
         })
 
         bot.reply_to(message, OVER_LIMIT_REPLY_TEMPLATE.format(
-            message_count=len(user_messages[user_id]),
+            message_count=message_count,
             time_until_ban_lift=time_until_tomorrow_string(),
         ))
+
+@bot.message_handler(commands=['help', 'start'])
+def send_welcome(message):
+    bot.reply_to(message, START_MESSAGE)
 
 
 bot.polling()
