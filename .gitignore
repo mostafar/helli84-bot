@@ -130,3 +130,5 @@ dmypy.json
 
 # Bot
 api.token
+bot.db
+bot.log
