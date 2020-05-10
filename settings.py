@@ -1,7 +1,8 @@
 import pytz
 
 CHAT_IDS_WHITELIST = [
-    -467632056,
+    -467632056,         # Test
+    -1001205725373,     # Helli84
 ]
 MESSAGE_LIMIT_COUNT = 5
 TIMEZONE = pytz.timezone("Asia/Tehran")
