@@ -17,6 +17,10 @@ Hi! I'm a bot here.
 OVER_LIMIT_REPLY_TEMPLATE = '''
 This is your {message_count}th message today. Please respect the group's rules by not sending any more messages until tomorrow ({time_until_ban_lift} from now).
 '''
+REPORT_TEMPLATE = '''
+You sent {message_count} messages today. Send times:
+{message_dates}
+'''
 
 bot = telebot.TeleBot(settings.API_TOKEN, num_threads=1)
 server_start_time = datetime.now().timestamp()
@@ -50,6 +54,41 @@ def time_until_tomorrow_string():
 
 def is_sent_after_server_start(message):
     return message.date >= server_start_time
+
+
+@bot.message_handler(commands=['help', 'start'])
+def send_welcome(message):
+    bot.reply_to(message, START_MESSAGE)
+
+
+@bot.message_handler(commands=['report'])
+def send_report(message):
+    log({
+        'event': 'Processing the command ...',
+        'message_date': str(settings.TIMEZONE.localize(datetime.fromtimestamp(message.date))),
+        'user_id': message.from_user.id,
+        'username': message.from_user.username,
+        'chat_id': message.chat.id,
+        'chat_title': message.chat.title,
+        'command': 'REPORT',
+        'ZZZ': 'BBB',
+    })
+
+    message_dates = clean_up_message_dates(message.from_user.id)
+
+    bot.reply_to(message, REPORT_TEMPLATE.format(
+        message_count=len(message_dates),
+        message_dates='\n'.join([
+            datetime.utcfromtimestamp(
+                message_date
+            ).replace(
+                tzinfo=timezone.utc
+            ).astimezone(
+                settings.TIMEZONE
+            ).strftime('%a, %b %-d - %I:%M %p (%z)')
+            for message_date in message_dates
+        ]),
+    ))
 
 
 @bot.message_handler(func=lambda message: True)
@@ -102,10 +141,6 @@ def process_message(message):
             message_count=message_count,
             time_until_ban_lift=time_until_tomorrow_string(),
         ))
-
-@bot.message_handler(commands=['help', 'start'])
-def send_welcome(message):
-    bot.reply_to(message, START_MESSAGE)
 
 
 bot.polling()
